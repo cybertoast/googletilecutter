@@ -88,11 +88,15 @@ if [ "$zoom" == "" -o "$orgZoom" == "" -o "$topX" == "" -o "$topY" == "" ]; then
     exit 1
 fi
 
+# Test for file existence
 shift $((OPTIND-1)) 
 file=$1
 if [ "$file" == "" ]; then
     echo "No file specified"
     echo -n "$usage"
+    exit 1
+elif [[ ! -r "$file" ]]; then
+    echo "File $file does not exist or cannot be read"
     exit 1
 fi
 

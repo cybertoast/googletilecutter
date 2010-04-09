@@ -203,7 +203,7 @@ for ((i=0; i<files; i++)) do
             echo -n "Compressing $newTile ... "
         fi
 
-        if [ $compress == "advpng" ]; then
+        if [ "$compress" == "advpng" ]; then
             reduction=`advpng -4 -z $tile | sed -ne "s/.* \([0-9]*\)% .*/\1/p"`
             reduction=$((100-$reduction))
         elif [ $compress == "pngcrush" ]; then

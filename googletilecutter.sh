@@ -18,8 +18,10 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-usage="Usage: googletilecutter.sh [-1kqh] [-p x,y] [-r tile prefix] 
-                           -z zoom -o top-left-zoom -t x,y file
+usage="Usage: googletilecutter.sh [-1kqh] [-p x,y] [-r tile prefix]
+                           -d /dest/path/to/save/tiles/to/
+                           -z zoom -o top-left-zoom -t x,y 
+                           -f file
 
 This script cuts an image into tiles suitable for use with Google Maps.  The
 tiles are produced from the given file for the given zoom and calculated based
@@ -30,6 +32,7 @@ files for various zoom levels, one only need change the zoom as specified by
 Tiles follow the naming convention of zAxByC.png, where A, B and C are the zoom
 level and the x and y coordinates of that tile, respectively.
 
+    -f file     File to cut into tiles
     -z zoom     The map zoom level the given file represents.
     -o zoom     The map zoom level for the top-left tile as given by -t. 
     -t x,y      The x and y coordinates of the top-left tile for
@@ -39,10 +42,13 @@ level and the x and y coordinates of that tile, respectively.
     -1          Specifies that version 1 zoom levels should be used.  That 
                 is, the zoom level decreases to 1, the most detailed level.
                 By default version 2 zoom levels are used.
-    -d dstdir   Directory to which to save the output files
+    -d destdir  Directory to which to save the output files. Will be created
+                if it does not exist. Note that files in this folder will be 
+                overwritten without warning!!!
     -k          Keep empty transparent tiles.  By default, empty transparent
                 tiles are deleted.
-    -q          Quiet mode.  Suppress all output.
+    -q          Quiet mode.  Suppress all output. This also applies to the
+                ImageMagick routines, which will be passed -verbose or -quiet
     -h          Display the help message.
 
 This script requires ImageMagick for image manipulation and either advpng or
@@ -53,39 +59,8 @@ This software comes with ABSOLUTELY NO WARRANTY. This is free software, and you
 are welcome to redistribute it under certain conditions.
 "
 
+# Fail on errors
 set -e
-
-zoom=""
-orgZoom=""
-topX=""
-topY=""
-file=""
-version=2
-padX=0
-padY=0
-prefix=""
-keepEmpty=0
-quiet=0
-
-while getopts ":z:o:t:f:p:r:d:1kqh" options; do
-  case $options in
-    z ) zoom=$OPTARG;;
-    o ) orgZoom=$OPTARG;;
-    t ) topX=`expr "$OPTARG" : '\(.*\),'`
-        topY=`expr "$OPTARG" : '.*,\(.*\)'`;;
-    p ) padX=`expr "$OPTARG" : '\(.*\),'`
-        padY=`expr "$OPTARG" : '.*,\(.*\)'`;;
-    r ) prefix="$OPTARG";;
-    d ) destdir="$OPTARG";;
-    1 ) version=1;;
-    k ) keepEmpty=1;;
-    q ) quiet=1;;
-    h ) echo -e "$usage"
-        exit 1;;
-    * ) echo -e "$usage"
-        exit 1;;
-  esac
-done
 
 
 #------------------------------------------------
@@ -99,15 +74,13 @@ debug() {
 
 sanity_check() {
     # Validate command-line options
-    if [ "$zoom" == "" -o "$orgZoom" == "" -o "$topX" == "" -o "$topY" == "" -o "$dstdir" == "" ]; then
+    if [ "$zoom" == "" -o "$orgZoom" == "" -o "$topX" == "" -o "$topY" == "" -o "$destdir" == "" -o "$file" == "" ]; then
         echo "Missing options"
         echo -n "$usage"
         exit 1
     fi
 
     # Test for file existence
-    shift $((OPTIND-1)) 
-    file=$1
     if [ "$file" == "" ]; then
         echo "No file specified"
         echo -n "$usage"
@@ -169,7 +142,7 @@ pad_image() {
     tempFile="$tempDir/$now"
     extraWidth=$((tileWidth*256 - $width))
     extraHeight=$((tileHeight*256 - $height))
-    convert "$file" -verbose -bordercolor none -border ${padX}x${padY} -crop ${width}x${height}+0+0 +repage -bordercolor none -border ${extraWidth}x${extraHeight} -crop +$extraWidth+$extraHeight +repage $tempFile
+    convert "$file" $QUIET -bordercolor none -border ${padX}x${padY} -crop ${width}x${height}+0+0 +repage -bordercolor none -border ${extraWidth}x${extraHeight} -crop +$extraWidth+$extraHeight +repage $tempFile
 }
 
 generate_tiles() {
@@ -179,7 +152,7 @@ generate_tiles() {
     # pad image to tile size
     tempPrefix="$tempFile-tile"
 
-    convert $tempFile -crop 256x256 -verbose +repage png32:$tempPrefix
+    convert $tempFile -crop 256x256 $QUIET +repage png32:$tempPrefix
 
     debug "Removing temporary location $tempFile"
 
@@ -200,7 +173,10 @@ renumber_and_compress() {
 
     for ((i=0; i<files; i++)) do
         tile=$tempPrefix-$i
-        newTile="${prefix}_${zoom}-${x}-${y}.png"
+        if [ ! -d $destdir ];then
+            mkdir -p $destdir
+        fi
+        newTile="${destdir}/${prefix}_${zoom}-${x}-${y}.png"
 
         # delete if empty
         if [ $keepEmpty -eq 0 ]; then
@@ -240,7 +216,7 @@ renumber_and_compress() {
                 echo "$reduction%"
             fi
 
-            echo "Moved tile to $newTile"
+            debug "Moved tile to $newTile"
             mv $tile "$newTile"
         fi
 
@@ -257,6 +233,47 @@ renumber_and_compress() {
 #------------------------------------------------
 # MAIN PROGRAM
 #------------------------------------------------
+# Initialize variables
+zoom=""
+orgZoom=""
+topX=""
+topY=""
+file=""
+version=2
+destdir=""
+file=""
+padX=0
+padY=0
+prefix=""
+keepEmpty=0
+quiet=0
+QUIET='-verbose'
+
+while getopts ":z:o:t:f:p:r:d:1kqh" options; do
+  case $options in
+    z ) zoom=$OPTARG;;
+    o ) orgZoom=$OPTARG;;
+    t ) topX=`expr "$OPTARG" : '\(.*\),'`
+        topY=`expr "$OPTARG" : '.*,\(.*\)'`;;
+    p ) padX=`expr "$OPTARG" : '\(.*\),'`
+        padY=`expr "$OPTARG" : '.*,\(.*\)'`;;
+    r ) prefix="$OPTARG";;
+    d ) destdir="$OPTARG";;
+    f ) file="$OPTARG";;
+    1 ) version=1;;
+    k ) keepEmpty=1;;
+    q ) 
+        quiet=1;
+        QUIET='-quiet';
+        ;;
+    h ) echo -e "$usage"
+        exit 1;;
+    * ) echo -e "$usage"
+        exit 1;;
+  esac
+done
+
+
 sanity_check
 check_png_compressor
 zoom_version
